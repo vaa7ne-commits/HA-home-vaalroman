@@ -18,6 +18,34 @@ blueprint:
       selector:
         entity:
           domain: fan
+    cal_co2_bolshaya:
+      name: Калибровочный датчик CO2 Большая
+      description: Необязательно. Если не указан используется датчик бризера
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+    cal_co2_spalnya:
+      name: Калибровочный датчик CO2 Спальня
+      description: Необязательно. Если не указан используется датчик бризера
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+    cal_pm25_bolshaya:
+      name: Калибровочный датчик PM2.5 Большая
+      description: Необязательно. Если не указан используется датчик бризера
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+    cal_pm25_spalnya:
+      name: Калибровочный датчик PM2.5 Спальня
+      description: Необязательно. Если не указан используется датчик бризера
+      default: ""
+      selector:
+        entity:
+          domain: sensor
     night_bolshaya:
       name: Ночной режим Большая
       selector:
@@ -95,6 +123,10 @@ variables:
   v_active_brizer_select: !input active_brizer_select
   v_fan_bolshaya: !input fan_bolshaya
   v_fan_spalnya: !input fan_spalnya
+  v_cal_co2_bolshaya: !input cal_co2_bolshaya
+  v_cal_co2_spalnya: !input cal_co2_spalnya
+  v_cal_pm25_bolshaya: !input cal_pm25_bolshaya
+  v_cal_pm25_spalnya: !input cal_pm25_spalnya
   v_night_bolshaya: !input night_bolshaya
   v_night_spalnya: !input night_spalnya
   v_co2_bad_threshold: !input co2_bad_threshold
@@ -107,34 +139,62 @@ variables:
   v_telegram_target: !input telegram_target
   fan_level_bolshaya: "{{ v_fan_bolshaya | replace('fan.', 'select.') | replace('air_fresh', 'fan_level') }}"
   fan_level_spalnya: "{{ v_fan_spalnya | replace('fan.', 'select.') | replace('air_fresh', 'fan_level') }}"
-  co2_bolshaya: "{{ v_fan_bolshaya | replace('fan.', 'sensor.') | replace('air_fresh', 'co2_density') }}"
-  co2_spalnya: "{{ v_fan_spalnya | replace('fan.', 'sensor.') | replace('air_fresh', 'co2_density') }}"
-  pm25_bolshaya: "{{ v_fan_bolshaya | replace('fan.', 'sensor.') | replace('air_fresh', 'pm25_density') }}"
-  pm25_spalnya: "{{ v_fan_spalnya | replace('fan.', 'sensor.') | replace('air_fresh', 'pm25_density') }}"
+  co2_sensor_bolshaya: "{{ v_fan_bolshaya | replace('fan.', 'sensor.') | replace('air_fresh', 'co2_density') }}"
+  co2_sensor_spalnya: "{{ v_fan_spalnya | replace('fan.', 'sensor.') | replace('air_fresh', 'co2_density') }}"
+  pm25_sensor_bolshaya: "{{ v_fan_bolshaya | replace('fan.', 'sensor.') | replace('air_fresh', 'pm25_density') }}"
+  pm25_sensor_spalnya: "{{ v_fan_spalnya | replace('fan.', 'sensor.') | replace('air_fresh', 'pm25_density') }}"
+  cal_co2_b_ok: "{{ v_cal_co2_bolshaya != '' and states(v_cal_co2_bolshaya) not in ['unavailable', 'unknown', 'none'] }}"
+  cal_co2_s_ok: "{{ v_cal_co2_spalnya != '' and states(v_cal_co2_spalnya) not in ['unavailable', 'unknown', 'none'] }}"
+  cal_pm25_b_ok: "{{ v_cal_pm25_bolshaya != '' and states(v_cal_pm25_bolshaya) not in ['unavailable', 'unknown', 'none'] }}"
+  cal_pm25_s_ok: "{{ v_cal_pm25_spalnya != '' and states(v_cal_pm25_spalnya) not in ['unavailable', 'unknown', 'none'] }}"
+  co2_b_raw: >
+    {% if cal_co2_b_ok %}
+      {{ states(v_cal_co2_bolshaya) | float(0) }}
+    {% else %}
+      {{ states(co2_sensor_bolshaya) | float(0) }}
+    {% endif %}
+  co2_s_raw: >
+    {% if cal_co2_s_ok %}
+      {{ states(v_cal_co2_spalnya) | float(0) }}
+    {% else %}
+      {{ states(co2_sensor_spalnya) | float(0) }}
+    {% endif %}
+  pm25_b_raw: >
+    {% if cal_pm25_b_ok %}
+      {{ states(v_cal_pm25_bolshaya) | float(0) }}
+    {% else %}
+      {{ states(pm25_sensor_bolshaya) | float(0) }}
+    {% endif %}
+  pm25_s_raw: >
+    {% if cal_pm25_s_ok %}
+      {{ states(v_cal_pm25_spalnya) | float(0) }}
+    {% else %}
+      {{ states(pm25_sensor_spalnya) | float(0) }}
+    {% endif %}
+  co2_b_source: "{{ 'калибровочный' if cal_co2_b_ok else 'бризер' }}"
+  co2_s_source: "{{ 'калибровочный' if cal_co2_s_ok else 'бризер' }}"
+  pm25_b_source: "{{ 'калибровочный' if cal_pm25_b_ok else 'бризер' }}"
+  pm25_s_source: "{{ 'калибровочный' if cal_pm25_s_ok else 'бризер' }}"
   active_brizer: "{{ states(v_active_brizer_select) }}"
   night_bolshaya_on: "{{ is_state(v_night_bolshaya, 'on') }}"
   night_spalnya_on: "{{ is_state(v_night_spalnya, 'on') }}"
   max_speed_bolshaya: "{{ v_max_night if night_bolshaya_on else 180 }}"
   max_speed_spalnya_val: "{{ v_max_night if night_spalnya_on else 180 }}"
-  co2_b: "{{ states(co2_bolshaya) | float(0) }}"
-  co2_s: "{{ states(co2_spalnya) | float(0) }}"
-  pm25_b: "{{ states(pm25_bolshaya) | float(0) }}"
-  pm25_s: "{{ states(pm25_spalnya) | float(0) }}"
   co2_val: >
     {% if active_brizer == 'Большая' %}
-      {{ co2_b }}
+      {{ co2_b_raw }}
     {% elif active_brizer == 'Спальня' %}
-      {{ co2_s }}
+      {{ co2_s_raw }}
     {% else %}
-      {{ [co2_b, co2_s] | max }}
+      {{ [co2_b_raw, co2_s_raw] | max }}
     {% endif %}
   pm25_val: >
     {% if active_brizer == 'Большая' %}
-      {{ pm25_b }}
+      {{ pm25_b_raw }}
     {% elif active_brizer == 'Спальня' %}
-      {{ pm25_s }}
+      {{ pm25_s_raw }}
     {% else %}
-      {{ [pm25_b, pm25_s] | max }}
+      {{ [pm25_b_raw, pm25_s_raw] | max }}
     {% endif %}
   speed_1: "{{ states(fan_level_bolshaya) | int(60) }}"
   speed_2: "{{ states(fan_level_spalnya) | int(60) }}"
@@ -161,12 +221,31 @@ variables:
   co2_good: "{{ co2_val | float < v_co2_good_threshold }}"
   pm25_good: "{{ pm25_val | float < v_pm25_good_threshold }}"
   co2_off: "{{ co2_val | float < v_co2_off_threshold }}"
+  cal_warning: >
+    {% if v_cal_co2_bolshaya != '' and not cal_co2_b_ok %}true
+    {% elif v_cal_co2_spalnya != '' and not cal_co2_s_ok %}true
+    {% else %}false{% endif %}
 
 trigger:
   - minutes: /5
     trigger: time_pattern
 
 action:
+  - if:
+      - condition: template
+        value_template: "{{ cal_warning == 'true' }}"
+    then:
+      - action: telegram_bot.send_message
+        data:
+          target: "{{ v_telegram_target }}"
+          message: |
+            ⚠️ Калибровочный датчик недоступен
+            {% if v_cal_co2_bolshaya != '' and not cal_co2_b_ok %}
+            🟡 Большая — используется датчик бризера
+            {% endif %}
+            {% if v_cal_co2_spalnya != '' and not cal_co2_s_ok %}
+            🟡 Спальня — используется датчик бризера
+            {% endif %}
   - choose:
       - conditions:
           - condition: template
@@ -198,8 +277,8 @@ action:
                 🔴 Бризеры выключены
                 🌬️ Активный: {{ active_brizer }}
                 ━━━━━━━━━━━━━━━
-                💨 CO2: Б {{ co2_b }} | С {{ co2_s }} ppm
-                🌫️ PM2.5: Б {{ pm25_b }} | С {{ pm25_s }} μg/m³
+                💨 CO2: Б {{ co2_b_raw }} ({{ co2_b_source }}) | С {{ co2_s_raw }} ({{ co2_s_source }}) ppm
+                🌫️ PM2.5: Б {{ pm25_b_raw }} ({{ pm25_b_source }}) | С {{ pm25_s_raw }} ({{ pm25_s_source }}) μg/m³
                 ━━━━━━━━━━━━━━━
                 ⚡ Скорость сброшена до 60
 
@@ -235,8 +314,8 @@ action:
                 🟢 Режим Auto
                 🌬️ Активный: {{ active_brizer }}
                 ━━━━━━━━━━━━━━━
-                💨 CO2: Б {{ co2_b }} | С {{ co2_s }} ppm
-                🌫️ PM2.5: Б {{ pm25_b }} | С {{ pm25_s }} μg/m³
+                💨 CO2: Б {{ co2_b_raw }} ({{ co2_b_source }}) | С {{ co2_s_raw }} ({{ co2_s_source }}) ppm
+                🌫️ PM2.5: Б {{ pm25_b_raw }} ({{ pm25_b_source }}) | С {{ pm25_s_raw }} ({{ pm25_s_source }}) μg/m³
                 ━━━━━━━━━━━━━━━
                 ⚡ Скорость сброшена до 60 перед Auto
 
@@ -283,8 +362,8 @@ action:
                 🔺 Скорость повышена
                 🌬️ Активный: {{ active_brizer }}
                 ━━━━━━━━━━━━━━━
-                💨 CO2: Б {{ co2_b }} | С {{ co2_s }} ppm (исп: {{ co2_val }})
-                🌫️ PM2.5: Б {{ pm25_b }} | С {{ pm25_s }} μg/m³ (исп: {{ pm25_val }})
+                💨 CO2: Б {{ co2_b_raw }} ({{ co2_b_source }}) | С {{ co2_s_raw }} ({{ co2_s_source }}) ppm (исп: {{ co2_val }})
+                🌫️ PM2.5: Б {{ pm25_b_raw }} ({{ pm25_b_source }}) | С {{ pm25_s_raw }} ({{ pm25_s_source }}) μg/m³ (исп: {{ pm25_val }})
                 ━━━━━━━━━━━━━━━
                 🏠 Большая: {{ speed_1 }} → {{ new_speed_b }} 🌙 {{ night_bolshaya_on }}
                 🛏️ Спальня: {{ speed_2 }} → {{ new_speed_s }} 🌙 {{ night_spalnya_on }}
@@ -333,8 +412,8 @@ action:
                 🔻 Скорость снижена
                 🌬️ Активный: {{ active_brizer }}
                 ━━━━━━━━━━━━━━━
-                💨 CO2: Б {{ co2_b }} | С {{ co2_s }} ppm (исп: {{ co2_val }})
-                🌫️ PM2.5: Б {{ pm25_b }} | С {{ pm25_s }} μg/m³ (исп: {{ pm25_val }})
+                💨 CO2: Б {{ co2_b_raw }} ({{ co2_b_source }}) | С {{ co2_s_raw }} ({{ co2_s_source }}) ppm (исп: {{ co2_val }})
+                🌫️ PM2.5: Б {{ pm25_b_raw }} ({{ pm25_b_source }}) | С {{ pm25_s_raw }} ({{ pm25_s_source }}) μg/m³ (исп: {{ pm25_val }})
                 ━━━━━━━━━━━━━━━
                 🏠 Большая: {{ speed_1 }} → {{ new_speed_b }} 🌙 {{ night_bolshaya_on }}
                 🛏️ Спальня: {{ speed_2 }} → {{ new_speed_s }} 🌙 {{ night_spalnya_on }}
