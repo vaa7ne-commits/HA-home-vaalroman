@@ -1,0 +1,155 @@
+blueprint:
+  name: Селектор датчика воздуха
+  description: >
+    Выбирает источник данных CO2 и PM2.5 с fallback логикой.
+    Записывает актуальные значения в helpers каждые 5 минут.
+  domain: automation
+  input:
+    room_name:
+      name: Название комнаты
+      description: Например Спальня или Большая
+      selector:
+        text:
+    fan_entity:
+      name: Бризер комнаты
+      description: Используется как резервный датчик
+      selector:
+        entity:
+          domain: fan
+    calibration_co2:
+      name: Калибровочный датчик CO2
+      description: Оставьте пустым если нет
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+    calibration_pm25:
+      name: Калибровочный датчик PM2.5
+      description: Оставьте пустым если нет
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+    calibration_pm10:
+      name: Калибровочный датчик PM10
+      description: Оставьте пустым если нет
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+    output_co2:
+      name: Helper для CO2
+      description: input_number куда писать итоговое значение CO2
+      selector:
+        entity:
+          domain: input_number
+    output_pm25:
+      name: Helper для PM2.5
+      description: input_number куда писать итоговое значение PM2.5
+      selector:
+        entity:
+          domain: input_number
+    output_pm10:
+      name: Helper для PM10
+      description: input_number куда писать итоговое значение PM10
+      selector:
+        entity:
+          domain: input_number
+    telegram_target:
+      name: Telegram chat ID
+      default: 40486942
+      selector:
+        number:
+          min: 1
+          max: 999999999
+
+variables:
+  v_fan: !input fan_entity
+  v_cal_co2: !input calibration_co2
+  v_cal_pm25: !input calibration_pm25
+  v_cal_pm10: !input calibration_pm10
+  v_output_co2: !input output_co2
+  v_output_pm25: !input output_pm25
+  v_output_pm10: !input output_pm10
+  v_telegram: !input telegram_target
+  v_room: !input room_name
+  co2_sensor_fan: "{{ v_fan | replace('fan.', 'sensor.') | replace('air_fresh', 'co2_density') }}"
+  pm25_sensor_fan: "{{ v_fan | replace('fan.', 'sensor.') | replace('air_fresh', 'pm25_density') }}"
+  fan_available: "{{ states(v_fan) not in ['unavailable', 'unknown', 'none'] }}"
+  cal_co2_available: "{{ v_cal_co2 != '' and states(v_cal_co2) not in ['unavailable', 'unknown', 'none'] }}"
+  cal_pm25_available: "{{ v_cal_pm25 != '' and states(v_cal_pm25) not in ['unavailable', 'unknown', 'none'] }}"
+  cal_pm10_available: "{{ v_cal_pm10 != '' and states(v_cal_pm10) not in ['unavailable', 'unknown', 'none'] }}"
+  co2_value: >
+    {% if cal_co2_available %}
+      {{ states(v_cal_co2) | float(0) }}
+    {% elif fan_available %}
+      {{ states(co2_sensor_fan) | float(0) }}
+    {% else %}
+      {{ states(v_output_co2) | float(0) }}
+    {% endif %}
+  pm25_value: >
+    {% if cal_pm25_available %}
+      {{ states(v_cal_pm25) | float(0) }}
+    {% elif fan_available %}
+      {{ states(pm25_sensor_fan) | float(0) }}
+    {% else %}
+      {{ states(v_output_pm25) | float(0) }}
+    {% endif %}
+  pm10_value: >
+    {% if cal_pm10_available %}
+      {{ states(v_cal_pm10) | float(0) }}
+    {% else %}
+      {{ states(v_output_pm10) | float(0) }}
+    {% endif %}
+  co2_source: >
+    {% if cal_co2_available %}калибровочный
+    {% elif fan_available %}бризер
+    {% else %}последнее значение{% endif %}
+  pm25_source: >
+    {% if cal_pm25_available %}калибровочный
+    {% elif fan_available %}бризер
+    {% else %}последнее значение{% endif %}
+  warning: >
+    {% if not fan_available and not cal_co2_available %}true
+    {% elif not cal_co2_available and v_cal_co2 != '' %}true
+    {% else %}false{% endif %}
+
+trigger:
+  - minutes: /5
+    trigger: time_pattern
+
+action:
+  - action: input_number.set_value
+    target:
+      entity_id: "{{ v_output_co2 }}"
+    data:
+      value: "{{ co2_value }}"
+  - action: input_number.set_value
+    target:
+      entity_id: "{{ v_output_pm25 }}"
+    data:
+      value: "{{ pm25_value }}"
+  - action: input_number.set_value
+    target:
+      entity_id: "{{ v_output_pm10 }}"
+    data:
+      value: "{{ pm10_value }}"
+  - if:
+      - condition: template
+        value_template: "{{ warning == 'true' }}"
+    then:
+      - action: telegram_bot.send_message
+        data:
+          target: "{{ v_telegram }}"
+          message: |
+            ⚠️ {{ v_room }} — проблема с датчиком
+            {% if not fan_available %}
+            🔴 Бризер недоступен — комната исключена из расчётов
+            {% elif not cal_co2_available and v_cal_co2 != '' %}
+            🟡 Калибровочный датчик недоступен
+            Используется датчик бризера
+            {% endif %}
+            💨 CO2: {{ co2_value }} ppm ({{ co2_source }})
+            🌫️ PM2.5: {{ pm25_value }} μg/m³ ({{ pm25_source }})
+
+mode: single
