@@ -180,7 +180,7 @@ action:
             data:
               preset_mode: Favorite
           - delay:
-              seconds: 1
+              milliseconds: 500
           - action: select.select_option
             target:
               entity_id:
@@ -189,7 +189,7 @@ action:
             data:
               option: "60"
           - delay:
-              seconds: 1
+              milliseconds: 500
           - action: fan.turn_off
             target:
               entity_id:
@@ -219,7 +219,7 @@ action:
             data:
               preset_mode: Favorite
           - delay:
-              seconds: 1
+              milliseconds: 500
           - action: select.select_option
             target:
               entity_id:
@@ -228,7 +228,7 @@ action:
             data:
               option: "60"
           - delay:
-              seconds: 1
+              milliseconds: 500
           - action: fan.set_preset_mode
             target:
               entity_id:
@@ -266,7 +266,7 @@ action:
                 data:
                   preset_mode: Favorite
               - delay:
-                  seconds: 1
+                  milliseconds: 500
               - action: select.select_option
                 target:
                   entity_id: "{{ fan_level_bolshaya }}"
@@ -282,7 +282,7 @@ action:
                 data:
                   preset_mode: Favorite
               - delay:
-                  seconds: 1
+                  milliseconds: 500
               - action: select.select_option
                 target:
                   entity_id: "{{ fan_level_spalnya }}"
@@ -320,7 +320,7 @@ action:
                 data:
                   preset_mode: Favorite
               - delay:
-                  seconds: 1
+                  milliseconds: 500
               - action: select.select_option
                 target:
                   entity_id: "{{ fan_level_bolshaya }}"
@@ -336,7 +336,7 @@ action:
                 data:
                   preset_mode: Favorite
               - delay:
-                  seconds: 1
+                  milliseconds: 500
               - action: select.select_option
                 target:
                   entity_id: "{{ fan_level_spalnya }}"
