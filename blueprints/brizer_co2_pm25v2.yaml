@@ -1,0 +1,223 @@
+blueprint:
+  name: Управление бризером по CO2 и PM2.5
+  description: Плавно регулирует скорость бризеров каждые 5 минут (исправлена работа ночного режима)
+  domain: automation
+  input:
+    active_brizer_select:
+      name: Выбор активного бризера
+      selector:
+        entity:
+          domain: input_select
+    fan_bolshaya:
+      name: Бризер Большая комната
+      selector:
+        entity:
+          domain: fan
+    fan_spalnya:
+      name: Бризер Спальня
+      selector:
+        entity:
+          domain: fan
+    cal_co2_bolshaya:
+      name: Калибровочный датчик CO2 Большая
+      description: Необязательно. Если не указан используется датчик бризера
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+    cal_co2_spalnya:
+      name: Калибровочный датчик CO2 Спальня
+      description: Необязательно. Если не указан используется датчик бризера
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+    cal_pm25_bolshaya:
+      name: Калибровочный датчик PM2.5 Большая
+      description: Необязательно. Если не указан используется датчик бризера
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+    cal_pm25_spalnya:
+      name: Калибровочный датчик PM2.5 Спальня
+      description: Необязательно. Если не указан используется датчик бризера
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+    night_bolshaya:
+      name: Ночной режим Большая
+      selector:
+        entity:
+          domain: input_boolean
+    night_spalnya:
+      name: Ночной режим Спальня
+      selector:
+        entity:
+          domain: input_boolean
+    telegram_target:
+      name: Telegram chat ID
+      default: 40486942
+      selector:
+        number:
+          min: 1
+          max: 999999999
+    co2_bad_threshold:
+      name: Порог CO2 высокий
+      default: 750
+      selector:
+        number:
+          min: 600
+          max: 1200
+          unit_of_measurement: ppm
+    co2_good_threshold:
+      name: Порог CO2 хороший
+      default: 600
+      selector:
+        number:
+          min: 400
+          max: 800
+          unit_of_measurement: ppm
+    co2_off_threshold:
+      name: Порог CO2 выключить
+      default: 500
+      selector:
+        number:
+          min: 300
+          max: 600
+          unit_of_measurement: ppm
+    pm25_bad_threshold:
+      name: Порог PM2.5 высокий
+      default: 25
+      selector:
+        number:
+          min: 10
+          max: 100
+          unit_of_measurement: μg/m³
+    pm25_good_threshold:
+      name: Порог PM2.5 хороший
+      default: 15
+      selector:
+        number:
+          min: 5
+          max: 50
+          unit_of_measurement: μg/m³
+    step:
+      name: Шаг скорости
+      default: 2
+      selector:
+        number:
+          min: 1
+          max: 6
+    max_speed_night:
+      name: Максимальная скорость ночью
+      default: 140
+      selector:
+        number:
+          min: 60
+          max: 180
+          step: 20
+
+variables:
+  v_active_brizer_select: !input active_brizer_select
+  v_fan_bolshaya: !input fan_bolshaya
+  v_fan_spalnya: !input fan_spalnya
+  v_cal_co2_bolshaya: !input cal_co2_bolshaya
+  v_cal_co2_spalnya: !input cal_co2_spalnya
+  v_cal_pm25_bolshaya: !input cal_pm25_bolshaya
+  v_cal_pm25_spalnya: !input cal_pm25_spalnya
+  v_night_bolshaya: !input night_bolshaya
+  v_night_spalnya: !input night_spalnya
+  v_co2_bad_threshold: !input co2_bad_threshold
+  v_co2_good_threshold: !input co2_good_threshold
+  v_co2_off_threshold: !input co2_off_threshold
+  v_pm25_bad_threshold: !input pm25_bad_threshold
+  v_pm25_good_threshold: !input pm25_good_threshold
+  v_step: !input step
+  v_max_night: !input max_speed_night
+  v_telegram_target: !input telegram_target
+
+  # ... (все переменные до trigger оставь как были, я не менял их) ...
+
+trigger:
+  - platform: time_pattern
+    minutes: "/5"
+
+action:
+  - if:
+      - condition: template
+        value_template: "{{ cal_warning == 'true' }}"
+    then:
+      - action: telegram_bot.send_message
+        data:
+          target: "{{ v_telegram_target }}"
+          message: "⚠️ Калибровочный датчик недоступен..."
+
+  - choose:
+      # Выключение
+      - conditions:
+          - "{{ co2_off and pm25_good }}"
+        sequence:
+          # ... твой оригинальный код выключения ...
+
+      # Режим Auto
+      - conditions:
+          - "{{ co2_good and pm25_good }}"
+        sequence:
+          # ... твой оригинальный код Auto ...
+
+      # Повышение скорости (главное исправление)
+      - conditions:
+          - "{{ co2_bad or pm25_bad }}"
+        sequence:
+          - variables:
+              new_index: "{{ [current_index + v_step | int, 6] | min }}"
+              new_speed_b: "{{ [speeds[new_index], max_speed_bolshaya | int] | min }}"
+              new_speed_s: "{{ [speeds[new_index], max_speed_spalnya_val | int] | min }}"
+
+          - if:
+              - condition: template
+                value_template: "{{ active_brizer in ['Большая', 'Все'] }}"
+            then:
+              - action: fan.set_preset_mode
+                target:
+                  entity_id: "{{ v_fan_bolshaya }}"
+                data:
+                  preset_mode: "Favorite"
+              - action: select.select_option
+                target:
+                  entity_id: "{{ fan_level_bolshaya }}"
+                data:
+                  option: "{{ new_speed_b }}"
+
+          - if:
+              - condition: template
+                value_template: "{{ active_brizer in ['Спальня', 'Все'] }}"
+            then:
+              - action: fan.set_preset_mode
+                target:
+                  entity_id: "{{ v_fan_spalnya }}"
+                data:
+                  preset_mode: "Favorite"
+              - action: select.select_option
+                target:
+                  entity_id: "{{ fan_level_spalnya }}"
+                data:
+                  option: "{{ new_speed_s }}"
+
+          - action: telegram_bot.send_message
+            # ... сообщение ...
+
+      # Снижение скорости
+      - conditions:
+          - "{{ not co2_bad and not pm25_bad and not (co2_good and pm25_good) }}"
+        sequence:
+          - variables:
+              new_index: "{{ [current_index - v_step | int, 0] | max }}"
+              new_speed_b: "{{ [speeds[new_index], max_speed_bolshaya | int] | min }}"
+              new_speed_s: "{{ [speeds[new_index], max_speed_spalnya_val | int] | min }}"
+
+          # ... остальной код снижения ...
+
+mode: single
