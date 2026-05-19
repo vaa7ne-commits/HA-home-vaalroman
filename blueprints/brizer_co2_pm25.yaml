@@ -18,36 +18,6 @@ blueprint:
       selector:
         entity:
           domain: fan
-    fan_level_bolshaya:
-      name: Скорость Большая комната
-      selector:
-        entity:
-          domain: select
-    fan_level_spalnya:
-      name: Скорость Спальня
-      selector:
-        entity:
-          domain: select
-    co2_bolshaya:
-      name: Датчик CO2 Большая
-      selector:
-        entity:
-          domain: sensor
-    co2_spalnya:
-      name: Датчик CO2 Спальня
-      selector:
-        entity:
-          domain: sensor
-    pm25_bolshaya:
-      name: Датчик PM2.5 Большая
-      selector:
-        entity:
-          domain: sensor
-    pm25_spalnya:
-      name: Датчик PM2.5 Спальня
-      selector:
-        entity:
-          domain: sensor
     night_bolshaya:
       name: Ночной режим Большая
       selector:
@@ -58,6 +28,14 @@ blueprint:
       selector:
         entity:
           domain: input_boolean
+    telegram_target:
+      name: Telegram chat ID
+      description: ID чата для отладки
+      default: 40486942
+      selector:
+        number:
+          min: 1
+          max: 999999999
     co2_bad_threshold:
       name: Порог CO2 высокий
       default: 750
@@ -114,53 +92,78 @@ blueprint:
           max: 180
           step: 20
 
+variables:
+  v_active_brizer_select: !input active_brizer_select
+  v_fan_bolshaya: !input fan_bolshaya
+  v_fan_spalnya: !input fan_spalnya
+  v_night_bolshaya: !input night_bolshaya
+  v_night_spalnya: !input night_spalnya
+  v_co2_bad_threshold: !input co2_bad_threshold
+  v_co2_good_threshold: !input co2_good_threshold
+  v_co2_off_threshold: !input co2_off_threshold
+  v_pm25_bad_threshold: !input pm25_bad_threshold
+  v_pm25_good_threshold: !input pm25_good_threshold
+  v_step: !input step
+  v_max_night: !input max_speed_night
+  v_telegram_target: !input telegram_target
+  fan_level_bolshaya: "{{ v_fan_bolshaya | replace('fan.', 'select.') | replace('air_fresh', 'fan_level') }}"
+  fan_level_spalnya: "{{ v_fan_spalnya | replace('fan.', 'select.') | replace('air_fresh', 'fan_level') }}"
+  co2_bolshaya: "{{ v_fan_bolshaya | replace('fan.', 'sensor.') | replace('air_fresh', 'co2_density') }}"
+  co2_spalnya: "{{ v_fan_spalnya | replace('fan.', 'sensor.') | replace('air_fresh', 'co2_density') }}"
+  pm25_bolshaya: "{{ v_fan_bolshaya | replace('fan.', 'sensor.') | replace('air_fresh', 'pm25_density') }}"
+  pm25_spalnya: "{{ v_fan_spalnya | replace('fan.', 'sensor.') | replace('air_fresh', 'pm25_density') }}"
+  active_brizer: "{{ states(v_active_brizer_select) }}"
+  night_bolshaya_on: "{{ is_state(v_night_bolshaya, 'on') }}"
+  night_spalnya_on: "{{ is_state(v_night_spalnya, 'on') }}"
+  max_speed_bolshaya: "{{ v_max_night if night_bolshaya_on else 180 }}"
+  max_speed_spalnya_val: "{{ v_max_night if night_spalnya_on else 180 }}"
+  co2_val: >
+    {% if active_brizer == 'Большая' %}
+      {{ states(co2_bolshaya) | float(0) }}
+    {% elif active_brizer == 'Спальня' %}
+      {{ states(co2_spalnya) | float(0) }}
+    {% else %}
+      {{ [states(co2_bolshaya) | float(0), states(co2_spalnya) | float(0)] | max }}
+    {% endif %}
+  pm25_val: >
+    {% if active_brizer == 'Большая' %}
+      {{ states(pm25_bolshaya) | float(0) }}
+    {% elif active_brizer == 'Спальня' %}
+      {{ states(pm25_spalnya) | float(0) }}
+    {% else %}
+      {{ [states(pm25_bolshaya) | float(0), states(pm25_spalnya) | float(0)] | max }}
+    {% endif %}
+  speed_1: "{{ states(fan_level_bolshaya) | int(60) }}"
+  speed_2: "{{ states(fan_level_spalnya) | int(60) }}"
+  current_speed: >
+    {% if active_brizer == 'Большая' %}
+      {{ speed_1 }}
+    {% elif active_brizer == 'Спальня' %}
+      {{ speed_2 }}
+    {% else %}
+      {{ [speed_1, speed_2] | max }}
+    {% endif %}
+  speeds:
+    - 60
+    - 80
+    - 100
+    - 120
+    - 140
+    - 160
+    - 180
+  current_index: >
+    {{ speeds.index(current_speed | int) if (current_speed | int) in speeds else 0 }}
+  co2_bad: "{{ co2_val | float >= v_co2_bad_threshold }}"
+  pm25_bad: "{{ pm25_val | float >= v_pm25_bad_threshold }}"
+  co2_good: "{{ co2_val | float < v_co2_good_threshold }}"
+  pm25_good: "{{ pm25_val | float < v_pm25_good_threshold }}"
+  co2_off: "{{ co2_val | float < v_co2_off_threshold }}"
+
 trigger:
   - minutes: /5
     trigger: time_pattern
 
 action:
-  - variables:
-      active_brizer: "{{ states(!input active_brizer_select) }}"
-      step_val: !input step
-      night_bolshaya_on: "{{ is_state(!input night_bolshaya, 'on') }}"
-      night_spalnya_on: "{{ is_state(!input night_spalnya, 'on') }}"
-      max_night: !input max_speed_night
-      max_speed_bolshaya: "{{ max_night if night_bolshaya_on else 180 }}"
-      max_speed_spalnya_val: "{{ max_night if night_spalnya_on else 180 }}"
-      co2_val: >
-        {% if active_brizer == 'Большая' %}
-          {{ states(!input co2_bolshaya) | float(0) }}
-        {% elif active_brizer == 'Спальня' %}
-          {{ states(!input co2_spalnya) | float(0) }}
-        {% else %}
-          {{ [states(!input co2_bolshaya) | float(0), states(!input co2_spalnya) | float(0)] | max }}
-        {% endif %}
-      pm25_val: >
-        {% if active_brizer == 'Большая' %}
-          {{ states(!input pm25_bolshaya) | float(0) }}
-        {% elif active_brizer == 'Спальня' %}
-          {{ states(!input pm25_spalnya) | float(0) }}
-        {% else %}
-          {{ [states(!input pm25_bolshaya) | float(0), states(!input pm25_spalnya) | float(0)] | max }}
-        {% endif %}
-      speed_1: "{{ states(!input fan_level_bolshaya) | int(60) }}"
-      speed_2: "{{ states(!input fan_level_spalnya) | int(60) }}"
-      current_speed: >
-        {% if active_brizer == 'Большая' %}
-          {{ speed_1 }}
-        {% elif active_brizer == 'Спальня' %}
-          {{ speed_2 }}
-        {% else %}
-          {{ [speed_1, speed_2] | max }}
-        {% endif %}
-      speeds: [60, 80, 100, 120, 140, 160, 180]
-      current_index: >
-        {{ speeds.index(current_speed | int) if (current_speed | int) in speeds else 0 }}
-      co2_bad: "{{ co2_val | float >= !input co2_bad_threshold }}"
-      pm25_bad: "{{ pm25_val | float >= !input pm25_bad_threshold }}"
-      co2_good: "{{ co2_val | float < !input co2_good_threshold }}"
-      pm25_good: "{{ pm25_val | float < !input pm25_good_threshold }}"
-      co2_off: "{{ co2_val | float < !input co2_off_threshold }}"
   - choose:
       - conditions:
           - condition: template
@@ -169,8 +172,18 @@ action:
           - action: fan.turn_off
             target:
               entity_id:
-                - !input fan_bolshaya
-                - !input fan_spalnya
+                - "{{ v_fan_bolshaya }}"
+                - "{{ v_fan_spalnya }}"
+          - action: telegram_bot.send_message
+            data:
+              target: "{{ v_telegram_target }}"
+              message: |
+                🔴 Бризер выключен
+                🌬️ Активный: {{ active_brizer }}
+                💨 CO2: {{ co2_val }} ppm
+                🌫️ PM2.5: {{ pm25_val }} μg/m³
+                ⚡ Скорость была: {{ current_speed }}
+
       - conditions:
           - condition: template
             value_template: "{{ co2_good and pm25_good }}"
@@ -178,78 +191,130 @@ action:
           - action: fan.set_preset_mode
             target:
               entity_id:
-                - !input fan_bolshaya
-                - !input fan_spalnya
+                - "{{ v_fan_bolshaya }}"
+                - "{{ v_fan_spalnya }}"
             data:
               preset_mode: Auto
+          - action: telegram_bot.send_message
+            data:
+              target: "{{ v_telegram_target }}"
+              message: |
+                🟢 Режим Auto
+                🌬️ Активный: {{ active_brizer }}
+                💨 CO2: {{ co2_val }} ppm
+                🌫️ PM2.5: {{ pm25_val }} μg/m³
+
       - conditions:
           - condition: template
             value_template: "{{ co2_bad or pm25_bad }}"
         sequence:
           - variables:
-              new_index: "{{ [current_index + step_val | int, 6] | min }}"
+              new_index: "{{ [current_index + v_step | int, 6] | min }}"
           - if:
               - condition: template
                 value_template: "{{ active_brizer == 'Большая' or active_brizer == 'Все' }}"
             then:
-              - action: select.select_option
-                target:
-                  entity_id: !input fan_level_bolshaya
-                data:
-                  option: "{{ [speeds[new_index], max_speed_bolshaya] | min | string }}"
               - action: fan.set_preset_mode
                 target:
-                  entity_id: !input fan_bolshaya
+                  entity_id: "{{ v_fan_bolshaya }}"
                 data:
                   preset_mode: Favorite
+              - delay:
+                  seconds: 1
+              - action: select.select_option
+                target:
+                  entity_id: "{{ fan_level_bolshaya }}"
+                data:
+                  option: "{{ [speeds[new_index], max_speed_bolshaya] | min | string }}"
+              - action: telegram_bot.send_message
+                data:
+                  target: "{{ v_telegram_target }}"
+                  message: |
+                    🔺 Большая — скорость повышена
+                    💨 CO2: {{ co2_val }} ppm
+                    🌫️ PM2.5: {{ pm25_val }} μg/m³
+                    ⚡ Скорость: {{ current_speed }} → {{ [speeds[new_index], max_speed_bolshaya] | min }}
+                    🌙 Ночной режим: {{ night_bolshaya_on }}
           - if:
               - condition: template
                 value_template: "{{ active_brizer == 'Спальня' or active_brizer == 'Все' }}"
             then:
-              - action: select.select_option
-                target:
-                  entity_id: !input fan_level_spalnya
-                data:
-                  option: "{{ [speeds[new_index], max_speed_spalnya_val] | min | string }}"
               - action: fan.set_preset_mode
                 target:
-                  entity_id: !input fan_spalnya
+                  entity_id: "{{ v_fan_spalnya }}"
                 data:
                   preset_mode: Favorite
+              - delay:
+                  seconds: 1
+              - action: select.select_option
+                target:
+                  entity_id: "{{ fan_level_spalnya }}"
+                data:
+                  option: "{{ [speeds[new_index], max_speed_spalnya_val] | min | string }}"
+              - action: telegram_bot.send_message
+                data:
+                  target: "{{ v_telegram_target }}"
+                  message: |
+                    🔺 Спальня — скорость повышена
+                    💨 CO2: {{ co2_val }} ppm
+                    🌫️ PM2.5: {{ pm25_val }} μg/m³
+                    ⚡ Скорость: {{ current_speed }} → {{ [speeds[new_index], max_speed_spalnya_val] | min }}
+                    🌙 Ночной режим: {{ night_spalnya_on }}
+
       - conditions:
           - condition: template
             value_template: >-
               {{ not co2_bad and not pm25_bad and not co2_good and not pm25_good }}
         sequence:
           - variables:
-              new_index: "{{ [current_index - step_val | int, 0] | max }}"
+              new_index: "{{ [current_index - v_step | int, 0] | max }}"
           - if:
               - condition: template
                 value_template: "{{ active_brizer == 'Большая' or active_brizer == 'Все' }}"
             then:
-              - action: select.select_option
-                target:
-                  entity_id: !input fan_level_bolshaya
-                data:
-                  option: "{{ speeds[new_index] | string }}"
               - action: fan.set_preset_mode
                 target:
-                  entity_id: !input fan_bolshaya
+                  entity_id: "{{ v_fan_bolshaya }}"
                 data:
                   preset_mode: Favorite
+              - delay:
+                  seconds: 1
+              - action: select.select_option
+                target:
+                  entity_id: "{{ fan_level_bolshaya }}"
+                data:
+                  option: "{{ speeds[new_index] | string }}"
+              - action: telegram_bot.send_message
+                data:
+                  target: "{{ v_telegram_target }}"
+                  message: |
+                    🔻 Большая — скорость снижена
+                    💨 CO2: {{ co2_val }} ppm
+                    🌫️ PM2.5: {{ pm25_val }} μg/m³
+                    ⚡ Скорость: {{ current_speed }} → {{ speeds[new_index] }}
           - if:
               - condition: template
                 value_template: "{{ active_brizer == 'Спальня' or active_brizer == 'Все' }}"
             then:
-              - action: select.select_option
-                target:
-                  entity_id: !input fan_level_spalnya
-                data:
-                  option: "{{ speeds[new_index] | string }}"
               - action: fan.set_preset_mode
                 target:
-                  entity_id: !input fan_spalnya
+                  entity_id: "{{ v_fan_spalnya }}"
                 data:
                   preset_mode: Favorite
+              - delay:
+                  seconds: 1
+              - action: select.select_option
+                target:
+                  entity_id: "{{ fan_level_spalnya }}"
+                data:
+                  option: "{{ speeds[new_index] | string }}"
+              - action: telegram_bot.send_message
+                data:
+                  target: "{{ v_telegram_target }}"
+                  message: |
+                    🔻 Спальня — скорость снижена
+                    💨 CO2: {{ co2_val }} ppm
+                    🌫️ PM2.5: {{ pm25_val }} μg/m³
+                    ⚡ Скорость: {{ current_speed }} → {{ speeds[new_index] }}
 
 mode: single
