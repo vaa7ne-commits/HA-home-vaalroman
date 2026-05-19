@@ -201,8 +201,10 @@ action:
               message: |
                 🔴 Бризеры выключены
                 🌬️ Активный: {{ active_brizer }}
-                💨 CO2: Большая {{ co2_b }} | Спальня {{ co2_s }} ppm (использовано: {{ co2_val }})
-                🌫️ PM2.5: Большая {{ pm25_b }} | Спальня {{ pm25_s }} μg/m³ (использовано: {{ pm25_val }})
+                ━━━━━━━━━━━━━━━
+                💨 CO2: Б {{ co2_b }} | С {{ co2_s }} ppm
+                🌫️ PM2.5: Б {{ pm25_b }} | С {{ pm25_s }} μg/m³
+                ━━━━━━━━━━━━━━━
                 ⚡ Скорость сброшена до 60
 
       - conditions:
@@ -240,8 +242,10 @@ action:
               message: |
                 🟢 Режим Auto
                 🌬️ Активный: {{ active_brizer }}
-                💨 CO2: Большая {{ co2_b }} | Спальня {{ co2_s }} ppm (использовано: {{ co2_val }})
-                🌫️ PM2.5: Большая {{ pm25_b }} | Спальня {{ pm25_s }} μg/m³ (использовано: {{ pm25_val }})
+                ━━━━━━━━━━━━━━━
+                💨 CO2: Б {{ co2_b }} | С {{ co2_s }} ppm
+                🌫️ PM2.5: Б {{ pm25_b }} | С {{ pm25_s }} μg/m³
+                ━━━━━━━━━━━━━━━
                 ⚡ Скорость сброшена до 60 перед Auto
 
       - conditions:
@@ -250,6 +254,8 @@ action:
         sequence:
           - variables:
               new_index: "{{ [current_index + v_step | int, 6] | min }}"
+              new_speed_b: "{{ [speeds[new_index], max_speed_bolshaya] | min }}"
+              new_speed_s: "{{ [speeds[new_index], max_speed_spalnya_val] | min }}"
           - if:
               - condition: template
                 value_template: "{{ active_brizer == 'Большая' or active_brizer == 'Все' }}"
@@ -265,16 +271,7 @@ action:
                 target:
                   entity_id: "{{ fan_level_bolshaya }}"
                 data:
-                  option: "{{ [speeds[new_index], max_speed_bolshaya] | min | string }}"
-              - action: telegram_bot.send_message
-                data:
-                  target: "{{ v_telegram_target }}"
-                  message: |
-                    🔺 Большая — скорость повышена
-                    💨 CO2: Большая {{ co2_b }} | Спальня {{ co2_s }} ppm (использовано: {{ co2_val }})
-                    🌫️ PM2.5: Большая {{ pm25_b }} | Спальня {{ pm25_s }} μg/m³ (использовано: {{ pm25_val }})
-                    ⚡ Скорость: {{ speed_1 }} → {{ [speeds[new_index], max_speed_bolshaya] | min }}
-                    🌙 Ночной режим: {{ night_bolshaya_on }}
+                  option: "{{ new_speed_b | string }}"
           - if:
               - condition: template
                 value_template: "{{ active_brizer == 'Спальня' or active_brizer == 'Все' }}"
@@ -290,16 +287,19 @@ action:
                 target:
                   entity_id: "{{ fan_level_spalnya }}"
                 data:
-                  option: "{{ [speeds[new_index], max_speed_spalnya_val] | min | string }}"
-              - action: telegram_bot.send_message
-                data:
-                  target: "{{ v_telegram_target }}"
-                  message: |
-                    🔺 Спальня — скорость повышена
-                    💨 CO2: Большая {{ co2_b }} | Спальня {{ co2_s }} ppm (использовано: {{ co2_val }})
-                    🌫️ PM2.5: Большая {{ pm25_b }} | Спальня {{ pm25_s }} μg/m³ (использовано: {{ pm25_val }})
-                    ⚡ Скорость: {{ speed_2 }} → {{ [speeds[new_index], max_speed_spalnya_val] | min }}
-                    🌙 Ночной режим: {{ night_spalnya_on }}
+                  option: "{{ new_speed_s | string }}"
+          - action: telegram_bot.send_message
+            data:
+              target: "{{ v_telegram_target }}"
+              message: |
+                🔺 Скорость повышена
+                🌬️ Активный: {{ active_brizer }}
+                ━━━━━━━━━━━━━━━
+                💨 CO2: Б {{ co2_b }} | С {{ co2_s }} ppm (исп: {{ co2_val }})
+                🌫️ PM2.5: Б {{ pm25_b }} | С {{ pm25_s }} μg/m³ (исп: {{ pm25_val }})
+                ━━━━━━━━━━━━━━━
+                🏠 Большая: {{ speed_1 }} → {{ new_speed_b }} 🌙 {{ night_bolshaya_on }}
+                🛏️ Спальня: {{ speed_2 }} → {{ new_speed_s }} 🌙 {{ night_spalnya_on }}
 
       - conditions:
           - condition: template
@@ -308,6 +308,8 @@ action:
         sequence:
           - variables:
               new_index: "{{ [current_index - v_step | int, 0] | max }}"
+              new_speed_b: "{{ speeds[new_index] }}"
+              new_speed_s: "{{ speeds[new_index] }}"
           - if:
               - condition: template
                 value_template: "{{ active_brizer == 'Большая' or active_brizer == 'Все' }}"
@@ -323,16 +325,7 @@ action:
                 target:
                   entity_id: "{{ fan_level_bolshaya }}"
                 data:
-                  option: "{{ speeds[new_index] | string }}"
-              - action: telegram_bot.send_message
-                data:
-                  target: "{{ v_telegram_target }}"
-                  message: |
-                    🔻 Большая — скорость снижена
-                    💨 CO2: Большая {{ co2_b }} | Спальня {{ co2_s }} ppm (использовано: {{ co2_val }})
-                    🌫️ PM2.5: Большая {{ pm25_b }} | Спальня {{ pm25_s }} μg/m³ (использовано: {{ pm25_val }})
-                    ⚡ Скорость: {{ speed_1 }} → {{ speeds[new_index] }}
-                    🌙 Ночной режим: {{ night_bolshaya_on }}
+                  option: "{{ new_speed_b | string }}"
           - if:
               - condition: template
                 value_template: "{{ active_brizer == 'Спальня' or active_brizer == 'Все' }}"
@@ -348,15 +341,18 @@ action:
                 target:
                   entity_id: "{{ fan_level_spalnya }}"
                 data:
-                  option: "{{ speeds[new_index] | string }}"
-              - action: telegram_bot.send_message
-                data:
-                  target: "{{ v_telegram_target }}"
-                  message: |
-                    🔻 Спальня — скорость снижена
-                    💨 CO2: Большая {{ co2_b }} | Спальня {{ co2_s }} ppm (использовано: {{ co2_val }})
-                    🌫️ PM2.5: Большая {{ pm25_b }} | Спальня {{ pm25_s }} μg/m³ (использовано: {{ pm25_val }})
-                    ⚡ Скорость: {{ speed_2 }} → {{ speeds[new_index] }}
-                    🌙 Ночной режим: {{ night_spalnya_on }}
+                  option: "{{ new_speed_s | string }}"
+          - action: telegram_bot.send_message
+            data:
+              target: "{{ v_telegram_target }}"
+              message: |
+                🔻 Скорость снижена
+                🌬️ Активный: {{ active_brizer }}
+                ━━━━━━━━━━━━━━━
+                💨 CO2: Б {{ co2_b }} | С {{ co2_s }} ppm (исп: {{ co2_val }})
+                🌫️ PM2.5: Б {{ pm25_b }} | С {{ pm25_s }} μg/m³ (исп: {{ pm25_val }})
+                ━━━━━━━━━━━━━━━
+                🏠 Большая: {{ speed_1 }} → {{ new_speed_b }} 🌙 {{ night_bolshaya_on }}
+                🛏️ Спальня: {{ speed_2 }} → {{ new_speed_s }} 🌙 {{ night_spalnya_on }}
 
 mode: single
