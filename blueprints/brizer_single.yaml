@@ -1,0 +1,296 @@
+blueprint:
+  name: 🌬️ Управление бризером (одиночный)
+  description: Плавно регулирует скорость одного бризера по CO2 и PM2.5
+  domain: automation
+  input:
+    fan_entity:
+      name: Бризер
+      selector:
+        entity:
+          domain: fan
+    active_brizer_select:
+      name: Выбор активного бризера
+      description: input_select — если бризер не выбран автоматизация не работает
+      selector:
+        entity:
+          domain: input_select
+    brizer_name:
+      name: Название бризера
+      description: Например Большая или Спальня — должно совпадать со значением в input_select
+      selector:
+        text:
+    cal_co2:
+      name: Калибровочный датчик CO2
+      description: Необязательно. Если не указан используется датчик бризера
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+    cal_pm25:
+      name: Калибровочный датчик PM2.5
+      description: Необязательно. Если не указан используется датчик бризера
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+    night_mode:
+      name: Ночной режим
+      selector:
+        entity:
+          domain: input_boolean
+    interval:
+      name: Интервал запуска (минуты)
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 20
+    co2_bad_threshold:
+      name: Порог CO2 высокий
+      default: 750
+      selector:
+        number:
+          min: 600
+          max: 1200
+          unit_of_measurement: ppm
+    co2_good_threshold:
+      name: Порог CO2 хороший
+      default: 600
+      selector:
+        number:
+          min: 400
+          max: 800
+          unit_of_measurement: ppm
+    co2_off_threshold:
+      name: Порог CO2 выключить
+      default: 500
+      selector:
+        number:
+          min: 300
+          max: 600
+          unit_of_measurement: ppm
+    pm25_bad_threshold:
+      name: Порог PM2.5 высокий
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: μg/m³
+    pm25_good_threshold:
+      name: Порог PM2.5 хороший
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 50
+          unit_of_measurement: μg/m³
+    step:
+      name: Шаг скорости
+      default: 2
+      selector:
+        number:
+          min: 1
+          max: 6
+    max_speed_night:
+      name: Максимальная скорость ночью
+      default: 120
+      selector:
+        number:
+          min: 60
+          max: 180
+          step: 20
+    telegram_target:
+      name: Telegram chat ID
+      default: 40486942
+      selector:
+        number:
+          min: 1
+          max: 999999999
+
+variables:
+  v_fan: !input fan_entity
+  v_select: !input active_brizer_select
+  v_name: !input brizer_name
+  v_cal_co2: !input cal_co2
+  v_cal_pm25: !input cal_pm25
+  v_night: !input night_mode
+  v_interval: !input interval
+  v_co2_bad: !input co2_bad_threshold
+  v_co2_good: !input co2_good_threshold
+  v_co2_off: !input co2_off_threshold
+  v_pm25_bad: !input pm25_bad_threshold
+  v_pm25_good: !input pm25_good_threshold
+  v_step: !input step
+  v_max_night: !input max_speed_night
+  v_telegram: !input telegram_target
+  fan_level: "{{ v_fan | replace('fan.', 'select.') | replace('air_fresh', 'fan_level') }}"
+  co2_sensor: "{{ v_fan | replace('fan.', 'sensor.') | replace('air_fresh', 'co2_density') }}"
+  pm25_sensor: "{{ v_fan | replace('fan.', 'sensor.') | replace('air_fresh', 'pm25_density') }}"
+  active_brizer: "{{ states(v_select) }}"
+  night_on: "{{ is_state(v_night, 'on') }}"
+  max_speed: "{{ v_max_night if night_on else 180 }}"
+  cal_co2_ok: "{{ v_cal_co2 != '' and states(v_cal_co2) not in ['unavailable', 'unknown', 'none'] }}"
+  cal_pm25_ok: "{{ v_cal_pm25 != '' and states(v_cal_pm25) not in ['unavailable', 'unknown', 'none'] }}"
+  co2_raw: "{{ states(v_cal_co2) | float(0) if cal_co2_ok else states(co2_sensor) | float(0) }}"
+  pm25_raw: "{{ states(v_cal_pm25) | float(0) if cal_pm25_ok else states(pm25_sensor) | float(0) }}"
+  co2_source: "{{ 'кал' if cal_co2_ok else 'бризер' }}"
+  pm25_source: "{{ 'кал' if cal_pm25_ok else 'бризер' }}"
+  current_speed: "{{ states(fan_level) | int(60) }}"
+  speeds:
+    - 60
+    - 80
+    - 100
+    - 120
+    - 140
+    - 160
+    - 180
+  co2_bad: "{{ co2_raw | float(0) >= v_co2_bad }}"
+  pm25_bad: "{{ pm25_raw | float(0) >= v_pm25_bad and v_pm25_bad > 0 }}"
+  co2_good: "{{ co2_raw | float(0) < v_co2_good }}"
+  pm25_good: "{{ pm25_raw | float(0) < v_pm25_good or v_pm25_good == 0 }}"
+  co2_off: "{{ co2_raw | float(0) < v_co2_off }}"
+  cal_warning: "{{ v_cal_co2 != '' and not cal_co2_ok }}"
+  is_active: "{{ active_brizer == v_name or active_brizer == 'Все' }}"
+
+trigger:
+  - platform: time_pattern
+    minutes: "/1"
+
+condition:
+  - condition: template
+    value_template: "{{ now().minute % (v_interval | int) == 0 }}"
+  - condition: template
+    value_template: "{{ is_active }}"
+
+action:
+  - variables:
+      current_index: >
+        {% set speeds = [60, 80, 100, 120, 140, 160, 180] %}
+        {{ speeds.index(current_speed) if current_speed in speeds else 0 }}
+
+  - if:
+      - condition: template
+        value_template: "{{ cal_warning }}"
+    then:
+      - action: telegram_bot.send_message
+        data:
+          target: "{{ v_telegram }}"
+          message: |
+            ⚠️ {{ v_name }} — калибровочный датчик недоступен
+            Используется датчик бризера
+            💨 CO2: {{ co2_raw }} ppm
+            🌫️ PM2.5: {{ pm25_raw }} μg/m³
+
+  - choose:
+      - conditions:
+          - "{{ co2_off and pm25_good }}"
+        sequence:
+          - action: fan.set_preset_mode
+            target:
+              entity_id: "{{ v_fan }}"
+            data:
+              preset_mode: Favorite
+          - action: select.select_option
+            target:
+              entity_id: "{{ fan_level }}"
+            data:
+              option: "60"
+          - action: fan.turn_off
+            target:
+              entity_id: "{{ v_fan }}"
+          - action: telegram_bot.send_message
+            data:
+              target: "{{ v_telegram }}"
+              message: |
+                🔴 {{ v_name }} — бризер выключен
+                ━━━━━━━━━━━━━━━
+                💨 CO2: {{ co2_raw }} ppm ({{ co2_source }})
+                🌫️ PM2.5: {{ pm25_raw }} μg/m³ ({{ pm25_source }})
+                ━━━━━━━━━━━━━━━
+                ⚡ Скорость сброшена до 60
+
+      - conditions:
+          - "{{ co2_good and pm25_good }}"
+        sequence:
+          - action: fan.set_preset_mode
+            target:
+              entity_id: "{{ v_fan }}"
+            data:
+              preset_mode: Favorite
+          - action: select.select_option
+            target:
+              entity_id: "{{ fan_level }}"
+            data:
+              option: "60"
+          - action: fan.set_preset_mode
+            target:
+              entity_id: "{{ v_fan }}"
+            data:
+              preset_mode: Auto
+          - action: telegram_bot.send_message
+            data:
+              target: "{{ v_telegram }}"
+              message: |
+                🟢 {{ v_name }} — режим Auto
+                ━━━━━━━━━━━━━━━
+                💨 CO2: {{ co2_raw }} ppm ({{ co2_source }})
+                🌫️ PM2.5: {{ pm25_raw }} μg/m³ ({{ pm25_source }})
+                ━━━━━━━━━━━━━━━
+                ⚡ Скорость сброшена до 60 перед Auto
+
+      - conditions:
+          - "{{ co2_bad or pm25_bad }}"
+        sequence:
+          - variables:
+              new_index: "{{ [current_index + v_step | int, 6] | min }}"
+              new_speed: "{{ [[60,80,100,120,140,160,180][new_index], max_speed | int] | min }}"
+          - action: fan.set_preset_mode
+            target:
+              entity_id: "{{ v_fan }}"
+            data:
+              preset_mode: Favorite
+          - action: select.select_option
+            target:
+              entity_id: "{{ fan_level }}"
+            data:
+              option: "{{ new_speed }}"
+          - action: telegram_bot.send_message
+            data:
+              target: "{{ v_telegram }}"
+              message: |
+                🔺 {{ v_name }} — скорость повышена
+                ━━━━━━━━━━━━━━━
+                💨 CO2: {{ co2_raw }} ppm ({{ co2_source }})
+                🌫️ PM2.5: {{ pm25_raw }} μg/m³ ({{ pm25_source }})
+                ━━━━━━━━━━━━━━━
+                ⚡ {{ current_speed }} → {{ new_speed }} 🌙 {{ night_on }}
+
+      - conditions:
+          - "{{ not co2_bad and not pm25_bad and not (co2_good and pm25_good) }}"
+        sequence:
+          - variables:
+              new_index: "{{ [current_index - v_step | int, 0] | max }}"
+              new_speed: "{{ [[60,80,100,120,140,160,180][new_index], max_speed | int] | min }}"
+          - action: fan.set_preset_mode
+            target:
+              entity_id: "{{ v_fan }}"
+            data:
+              preset_mode: Favorite
+          - action: select.select_option
+            target:
+              entity_id: "{{ fan_level }}"
+            data:
+              option: "{{ new_speed }}"
+          - action: telegram_bot.send_message
+            data:
+              target: "{{ v_telegram }}"
+              message: |
+                🔻 {{ v_name }} — скорость снижена
+                ━━━━━━━━━━━━━━━
+                💨 CO2: {{ co2_raw }} ppm ({{ co2_source }})
+                🌫️ PM2.5: {{ pm25_raw }} μg/m³ ({{ pm25_source }})
+                ━━━━━━━━━━━━━━━
+                ⚡ {{ current_speed }} → {{ new_speed }} 🌙 {{ night_on }}
+
+mode: single
